@@ -106,13 +106,31 @@ The badge flashes its LEDs and buzzes—achievement unlocked! If you enter it ag
 UNLOCK: ALREADY UNLOCKED
 ```
 
-### 4. CTF Flag 1
-Many conference badges have hidden commands. Try querying flags:
-```text
-> FLAG 1
-Flag: {At0m1c_Ut0p1a_1955}
-```
-**Flag 1 captured!**
+### 4. CTF Flags: Testing the Waters
+Many conference badges have hidden commands. If you query `FLAG`:
+
+- **Flag 1:**
+  ```text
+  > FLAG 1
+  Flag: {At0m1c_Ut0p1a_1955}
+  ```
+  **Flag 1 captured!** Just like that, the first flag is returned directly in plaintext.
+
+- **Flag 2:**
+  ```text
+  > FLAG 2
+  Flag: INVALID
+  ```
+  The badge rejects the request. Does it require special credentials or external hardware?
+
+- **Flag 3:**
+  ```text
+  > FLAG 3
+  Flag: ***********************
+  ```
+  Twenty-three asterisks stare right back at you! The badge knows the flag exists, but it deliberately masks it out.
+
+To capture **Flag 2** and **Flag 3**, we will need to dump the firmware and look under the hood in Phase 6.
 
 ---
 
@@ -199,15 +217,150 @@ Now you have `badge_backup.bin` on your hard drive!
 
 ---
 
-## Phase 6: Cracking the 30 Achievement Hashes
+## Phase 6: Reverse Engineering the Firmware: Flags 2 & 3 and Finding "PlumProf"
 
-In Linux security, password hashes are stored in `/etc/shadow`. The badge uses the exact same design:
-- It maintains an array of **thirty 64-bit target hashes** in firmware memory.
-- When you type `UNLOCK <word>`, the badge runs your word through a custom hashing function (`badge_hash64`, seeded with `"PlumProf"` / `0x50726f66506c756d`) and checks if the hash matches any entry in its table.
+Now that we dumped `badge_backup.bin` in Phase 5, we have the complete, unencrypted flash filesystem. This is where hardware hacking turns into software reverse engineering and binary forensics.
 
-Because all codes follow the format `SC_<WORD1>_<WORD2>` using common space navigation terms (e.g., `ORBIT`, `VECTOR`, `DRIFT`, `NOVA`, `PULSE`), we ran a dictionary generator in Python that tested space-themed word combinations.
+### 1. Capturing Flag 3: The Asterisk Troll (`0x28070`)
 
-Within seconds, all 30 target hashes collided and yielded the full dictionary of codes:
+Recall that running `FLAG 3` in Phase 2 printed:
+```text
+> FLAG 3
+Flag: ***********************
+```
+
+Why did the badge redact the flag with 23 asterisks?
+
+When we inspect the ARM Thumb-2 disassembly of the `FLAG 3` command handler at address `0x100102fe`:
+```armasm
+100102fe:  ldr   r5, [pc, #200]       ; r5 = 0x10028070 (points to plaintext Flag 3!)
+10010300:  add   r4, sp, #32          ; r4 = stack output buffer
+10010302:  ldmia r5!, {r0, r1, r2, r3} ; copies 23-byte flag into stack buffer
+...
+10010326:  mov.w r3, #0x2a2a2a2a      ; 0x2A is ASCII for '*' ('****')!
+1001032a:  str   r3, [sp, #48]
+1001032c:  strd  r3, r3, [sp, #32]    ; deliberately overwrites the buffer with asterisks!
+10010330:  strd  r3, r3, [sp, #40]
+```
+
+The badge developer pulled a classic conference prank: the firmware loads the real plaintext flag into RAM, but right before sending it across the serial line, it loops and overwrites the entire string with asterisks (`0x2A`)!
+
+Because the real string lives in the firmware flash at offset `0x28070` (`0x10028070`), we can extract it directly from `badge_backup.bin`:
+
+```bash
+# Option A: Quick search using the strings command
+strings -n 10 badge_backup.bin | grep "Rusty"
+
+# Option B: Exact byte slice with Python
+python3 -c "print(open('badge_backup.bin', 'rb').read()[0x28070:0x28070+23].decode())"
+```
+
+**Output:**
+```text
+{Rusty_C0d3_1s_4w3s0m3}
+```
+**Flag 3 captured!**
+
+---
+
+### 2. Capturing Flag 2: The "PLUM" EEPROM Bypass (`0x280bc`)
+
+When we entered `FLAG 2` on the CLI in Phase 2, the badge replied:
+```text
+> FLAG 2
+Flag: INVALID
+```
+
+Looking at the disassembly of the `FLAG 2` branch at `0x1001033a`:
+1. The badge performs an I2C read of the first 8 bytes of an external memory chip (`0x1000e33c`).
+2. At `0x10010348`, it compares the first 4 bytes against `0x4d554c50`—which is ASCII for **`"PLUM"`**!
+3. If the chip does not return `"PLUM"`, it prints `Flag: INVALID`.
+4. If `"PLUM"` is detected, it loads a 21-byte scrambled array from flash offset `0x280bc` and decrypts it on the fly.
+
+We don't need any special hardware or an external chip—the scrambled 21 bytes and the decryption routine are already inside our firmware dump!
+
+At offset `0x280bc`, the scrambled bytes are:
+```python
+[202, 227, 39, 128, 65, 63, 24, 116, 125, 71, 223, 66, 171, 151, 106, 119, 104, 231, 143, 155, 194]
+```
+
+The assembly routine decodes each byte `b` at index `i` (`0..20`) using an XOR with `0xA5`, an index offset (`+ 3 * i`), and a 3-bit left rotate:
+```python
+x = ((b ^ i ^ 0xA5) + 3 * i) & 0xFF
+char = ((x << 3) | (x >> 5)) & 0xFF  # 3-bit left rotate
+```
+
+You can decode Flag 2 instantly from `badge_backup.bin` with this one-liner:
+
+```bash
+python3 -c "
+data = open('badge_backup.bin', 'rb').read()[0x280bc:0x280bc+21]
+flag = ''.join(chr(((((b ^ i ^ 0xA5) + 3 * i) & 0xFF) << 3 | (((b ^ i ^ 0xA5) + 3 * i) & 0xFF) >> 5) & 0xFF) for i, b in enumerate(data))
+print(flag)
+"
+```
+
+**Output:**
+```text
+{R4ygun_G0th13_Ph4s3}
+```
+**Flag 2 captured!** All 3 conference CTF flags are now solved.
+
+---
+
+### 3. Where & How We Found `"PlumProf"` (The Custom 64-Bit Hash)
+
+With the CTF flags solved, our next target was the **30 locked conference achievements**.
+
+When you run `strings` on `badge_backup.bin`, almost none of the secret codes appear. The badge doesn't store the secret unlock words in plaintext.
+
+Instead, disassembling the `UNLOCK <code>` command handler at address `0x1000e0d0` reveals how verification works:
+
+```armasm
+1000e0d6:  mov   r4, r0             ; r4 = pointer to user's UNLOCK string
+1000e0d8:  bl    0x10013e98         ; calls strlen(input)
+1000e0dc:  add   r3, pc, #160       ; r3 = 0x1000e180 (the literal pool)
+1000e0de:  ldrd  r2, r3, [r3]       ; loads 64-bit constant from 0x1000e180 into r2 and r3!
+1000e0e2:  mov   r1, r0             ; r1 = string length
+1000e0e4:  mov   r0, r4             ; r0 = string pointer
+1000e0e6:  bl    0x10010a9c         ; calls badge_hash64(str, len, seed)!
+1000e0ea:  movs  r4, #2             ; loop counter: start at achievement Slot 2
+1000e0ec:  ldr   r3, [pc, #152]     ; loads address of target hashes in RAM (0x20001710)
+```
+
+#### Where Did `"PlumProf"` Come From?
+Look closely at instruction `0x1000e0de`:
+```armasm
+ldrd r2, r3, [r3]    ; loads 8 bytes from address 0x1000e180
+```
+This instruction loads an 8-byte (64-bit) constant from the literal pool at address `0x1000e180` (file offset `0xe180` in `badge_backup.bin`).
+
+If we inspect those 8 bytes at file offset `0xe180`:
+```text
+Offset 0x0000E180:  6d 75 6c 50  66 6f 72 50
+```
+Because ARM is little-endian, reading these as two 32-bit words gives:
+- Word 1 (`r2`): `0x506c756d` $\rightarrow$ ASCII bytes `'P'`, `'l'`, `'u'`, `'m'` (**`"Plum"`**)
+- Word 2 (`r3`): `0x50726f66` $\rightarrow$ ASCII bytes `'P'`, `'r'`, `'o'`, `'f'` (**`"Prof"`**)
+
+Combined into a single 64-bit integer, the seed is:
+$$\mathbf{0x50726f66506c756d} \Longleftrightarrow \mathbf{\text{"PlumProf"}}$$
+
+The badge author (who already hid the `"PLUM"` check in Flag 2) used the alias of the classic *Clue* character **Professor Plum** (`"PlumProf"`) as the secret seed for the badge's custom hash function!
+
+---
+
+### 4. Cracking All 30 Hashes with a Space Dictionary
+
+The function at `0x10010a9c` is a custom 64-bit mixing algorithm (similar to xxHash). It takes your input word and hashes it using the `"PlumProf"` seed.
+
+The loop in `0x1000e0f0`–`0x1000e102` then compares your calculated 64-bit hash against a table of **thirty 64-bit target hashes** stored in SRAM (`0x20001718`–`0x20001807`, loaded from flash `0x1762b4`):
+- If the hash matches entry `i`, achievement `i` is unlocked and written to the badge's EEPROM.
+
+Because we now had both the **algorithm** (`0x10010a9c`) and the **seed** (`"PlumProf"` / `0x50726f66506c756d`), we reconstructed the hash in Python. All unlock codes followed the pattern:
+$$\mathbf{SC\_<WORD1>\_<WORD2>}$$
+
+We fed standard sci-fi and space navigation terms (`VECTOR`, `ORBIT`, `DRIFT`, `NOVA`, `PULSE`, `FLUX`, `SIGNAL`, etc.) into a Python dictionary generator. Within seconds, all 30 64-bit target hashes collided, giving us the full list of secret codes:
 
 | Slot | Achievement Title | Secret Code |
 | :---: | :--- | :--- |

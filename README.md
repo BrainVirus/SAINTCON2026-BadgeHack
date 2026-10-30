@@ -8,7 +8,7 @@ Complete writeup, achievement unlock codes, CTF flags, beginner's walkthrough, a
 
 ## Repository Contents
 
-- **[BEGINNER_GUIDE.md](./BEGINNER_GUIDE.md)** — **Start here!** A dead-simple, step-by-step walkthrough written specifically for IT and InfoSec professionals who are new to hardware hacking. Covers plugging in the badge, serial shell recon, solving the starfield cipher, the Konami code, and dumping the firmware without soldering.
+- **[BEGINNER_GUIDE.md](./BEGINNER_GUIDE.md)** — **Start here!** A dead-simple, step-by-step walkthrough written specifically for IT and InfoSec professionals who are new to hardware hacking. Covers plugging in the badge, serial shell recon, solving the starfield cipher, the Konami code, dumping the firmware without soldering, capturing all 3 CTF flags, and cracking the 30 achievement hashes.
 - **[SAINTCON2026_BADGE_STORY.md](./SAINTCON2026_BADGE_STORY.md)** — Talk-ready narrative walking through how we reverse-engineered the badge from initial USB serial access to dumping the flash, cracking the `"PlumProf"` 64-bit hash table, and unlocking all 30 achievements.
 - **[SAINTCON2026_BADGE_GUIDE.md](./SAINTCON2026_BADGE_GUIDE.md)** — Complete technical reference containing:
   - All 3 CTF flags (`FLAG 1`, `FLAG 2`, `FLAG 3`) and their decryption/extraction methods
