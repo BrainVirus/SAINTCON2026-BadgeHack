@@ -75,6 +75,7 @@ Landing on the center **Space Station `(0, 0)`** triggers specific branch condit
 In `new_game_init` (`0x100011f8`), the game checks if `crew_count != 0`:
 * If crew members survived your previous run, **the game preserves them into the next run** until they perish in an encounter or the badge is power-cycled.
 * Having specialists unlocked enables gold/cyan 4th event choices with **80%–85% success rates**.
+* **Hardware Shortcut (Offline Mode via JP2):** Bridging solder jumper **`JP2`** on the badge PCB pulls GPIO 29 low to ground, putting the badge into **Offline Mode** (`0x10000526`). In Offline Mode, `0x10001162` bypasses the standard single-captain start and automatically launches your voyage with all **5 specialist crew members** (Captain, Pilot, Engineer, Scientist, Medic) fully staffed from turn 1!
 
 ### Recruitment Events:
 1. **An Unexpected Passenger:** Select **Choice 3: `Let them stay`** (60% chance: `Crew +1`, 40% chance: `Hull -1`).

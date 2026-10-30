@@ -86,7 +86,7 @@ The badge tracks **32 achievements** (`Slots 0–31`):
 | **9** | **Civic Duty** | `SC_ORBIT_DECAY` | `0xd1ff3ce39c469e68` | Hash reversal |
 | **10** | **Deep Storage** | `SC_THRUST_LOSS` | `0x3c317b15e7c1e29d` | Found in plaintext in flash at `0x28239` |
 | **11** | **Long-Term Memory** | `SC_SIGNAL_GHOST` | `0xa1d4a114f76211b7` | Found XOR-encoded with `0x55` in flash at `0x27574` |
-| **12** | **Manual Override** | `SC_ECHO_ORBIT` | `0x95c911db5174adae` | Hash reversal *(or enable Offline Mode at `0x10000576`)* |
+| **12** | **Manual Override** | `SC_ECHO_ORBIT` | `0x95c911db5174adae` | Hash reversal *(or enable Offline Mode by soldering jumper JP2 to pull GPIO 29 low at `0x10000576`)* |
 | **13** | **Service Port** | `SC_DUST_FLUX` | `0x236c4a02f5b53468` | Listed in serial `HELP` output |
 | **14** | **Dockmaster's Channel** | `SC_PHASE_DRIFT` | `0xca5d48f6551e91a6` | Found XOR-encoded with `0x57` in flash at `0x27bf0` |
 | **15** | **Misaligned Home Row** | `SC_GRAV_SHIFT` | `0x3b21dd157c302499` | Starfield banner `DV+HTSB+DJOGY` shifted 1 key left on QWERTY |

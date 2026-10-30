@@ -502,4 +502,8 @@ Your physical badge now has every single conference achievement unlocked and you
    - **Flag 3:** `{Fly1ng_C4r_Pr0m1s3}` *(Decrypted via GOST 28147-89 / Magma @ `0x100280a0`; special credit to `r3tr0hck342`)*
    - **Decoy:** `{Rusty_C0d3_1s_4w3s0m3}` *(Unused plaintext strings bait @ `0x10028070`)*
 2. **Achievements Unlocked:** 32 / 32 (30 via serial script + Konami Code + First Departure).
-3. **In-Game Reward:** Starting *Wayfarer* with **₡5,800 credits** and all **5 specialist crew members**!
+3. **In-Game Reward:** Starting *Wayfarer* with **₡5,800 credits** (scaled by achievement count).
+   > [!NOTE]
+   > In standard game mode, you start the game with only **1 crew member** (the Captain) and recruit specialists later at stations or during random encounters.
+   > 
+   > **Hardware Easter Egg (5 Starting Crew):** To start *Wayfarer* with all **5 specialist crew members** (Captain, Pilot, Engineer, Scientist, Medic) immediately loaded, you must bridge solder jumper **`JP2`** on the badge PCB (pulling GPIO 29 low to GND). On startup, this activates **Offline Mode** (`0x10000526`), automatically unlocks Achievement 12 (*"Manual Override"* at `0x10000576`), and pre-populates your ship with a full 5-member specialist crew at `0x10001162`!
