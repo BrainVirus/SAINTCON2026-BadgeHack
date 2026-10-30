@@ -231,16 +231,29 @@ Flag: ***********************
 
 Why did the badge redact the flag with 23 asterisks?
 
-When we inspect the ARM Thumb-2 disassembly of the `FLAG 3` command handler at address `0x100102fe`:
+When we inspect the ARM Thumb-2 disassembly of the `FLAG` command handler:
+
+1. At address `0x10010026`, the firmware loads the pointer to the real plaintext flag from literal pool address `0x100101c4` (which holds `0x10028070`, flash offset `0x28070`) and copies all 23 bytes into the stack output buffer:
 ```armasm
-100102fe:  ldr   r5, [pc, #200]       ; r5 = 0x10028070 (points to plaintext Flag 3!)
-10010300:  add   r4, sp, #32          ; r4 = stack output buffer
-10010302:  ldmia r5!, {r0, r1, r2, r3} ; copies 23-byte flag into stack buffer
-...
+10010026:  ldr   r5, [pc, #412]       ; loads address 0x10028070 from literal pool (0x100101c4)
+10010028:  add   r4, sp, #32          ; r4 = stack output buffer
+1001002a:  ldmia r5!, {r0, r1, r2, r3} ; copies first 16 bytes of plaintext flag into buffer
+1001002e:  ldmia.w r5, {r0, r1}        ; copies remaining bytes of flag into buffer
+```
+
+2. At `0x1001003a`, it checks if the argument after `FLAG` is `'3'` (`0x33`). If so, it branches to `0x100102fe`:
+```armasm
+1001003a:  cmp.w ip, #51              ; Is the argument '3' (0x33)?
+1001003e:  beq.w 0x100102fe           ; Jump to Flag 3 branch
+```
+
+3. Inside the `FLAG 3` branch at `0x10010326`, notice what happens right before printing:
+```armasm
 10010326:  mov.w r3, #0x2a2a2a2a      ; 0x2A is ASCII for '*' ('****')!
 1001032a:  str   r3, [sp, #48]
 1001032c:  strd  r3, r3, [sp, #32]    ; deliberately overwrites the buffer with asterisks!
 10010330:  strd  r3, r3, [sp, #40]
+10010338:  b.n   0x1001008a           ; jumps to print "Flag: ***********************"
 ```
 
 The badge developer pulled a classic conference prank: the firmware loads the real plaintext flag into RAM, but right before sending it across the serial line, it loops and overwrites the entire string with asterisks (`0x2A`)!
@@ -275,7 +288,17 @@ Looking at the disassembly of the `FLAG 2` branch at `0x1001033a`:
 1. The badge performs an I2C read of the first 8 bytes of an external memory chip (`0x1000e33c`).
 2. At `0x10010348`, it compares the first 4 bytes against `0x4d554c50`—which is ASCII for **`"PLUM"`**!
 3. If the chip does not return `"PLUM"`, it prints `Flag: INVALID`.
-4. If `"PLUM"` is detected, it loads a 21-byte scrambled array from flash offset `0x280bc` and decrypts it on the fly.
+4. If `"PLUM"` is detected, it loads a 21-byte scrambled array from flash address `0x100280bc` (offset `0x280bc`) and decrypts it on the fly.
+
+```armasm
+10010344:  ldr   r3, [pc, #136]       ; loads 0x4d554c50 ("PLUM" in ASCII) from 0x100103d0
+10010346:  ldr   r2, [sp, #0]         ; loads first 4 bytes returned from I2C EEPROM
+10010348:  cmp   r2, r3               ; Does the external chip say "PLUM"?
+1001034a:  beq.n 0x10010358           ; Match -> jump to decryption routine!
+1001034e:  ldr   r1, [pc, #132]       ; No match -> loads pointer to string "INVALID"
+...
+1001035a:  ldr   r6, [pc, #124]       ; loads address 0x100280bc (flash offset 0x280bc)
+```
 
 We don't need any special hardware or an external chip—the scrambled 21 bytes and the decryption routine are already inside our firmware dump!
 
