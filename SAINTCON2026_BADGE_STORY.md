@@ -46,22 +46,29 @@ Now we had the entire brain of the badge sitting in front of us.
 
 ---
 
-## Act III: The Three Flags & The Troll in `FLAG 3`
+## Act III: The Three Flags, The Decoy Honeypot, and Cracking GOST
 
 Our first stop inside `badge_backup.bin` was the `FLAG` command handler at `0x10010016`.
 
-### The `FLAG 3` Fake-Out
-Why did `FLAG 3` print 23 asterisks? When we disassembled the `FLAG 3` branch at `0x100102fe`, we couldn't help but laugh. The firmware actually loads the real, plaintext flag from flash offset `0x28070` onto the stack, runs three rounds of a block cipher over it, and then—right before printing it—executes this:
+### The `FLAG 3` Fake-Out & The Strings Honeypot
+Why did `FLAG 3` print 23 asterisks on the serial console?
 
-```armasm
-mov.w r3, #0x2a2a2a2a   ; '****'
-str   r3, [sp, #0x30]
-strd  r3, r3, [sp, #32]
-strd  r3, r3, [sp, #40]
-```
+When running `strings badge_backup.bin | grep "{"`, a plaintext string immediately jumped out at flash offset `0x28070`:
+`{Rusty_C0d3_1s_4w3s0m3}`.
 
-It literally overwrites the buffer with `0x2A` (`'*'`) every single time! There is no serial argument that unmasks it—the puzzle *was* dumping the firmware. Reading flash offset `0x28070` gave us **`FLAG 3`**:
-> **`{Rusty_C0d3_1s_4w3s0m3}`**
+It seemed like an open-and-shut case. But sharp-eyed security researcher **`r3tr0hck342`** pointed out what was really happening in the control flow: **that plaintext string was a deliberate honeypot trap!**
+
+When you trace the assembly from `0x10010026`, the dispatcher loads `{Rusty_C0d3_1s_4w3s0m3}` into the output buffer as default scratch space. But *every single branch* in the command handler immediately overwrites that buffer. That decoy string is literally never outputted by the badge!
+
+When `FLAG 3` runs (`0x100102fe`), the firmware:
+1. Loads **24 encrypted bytes** from flash offset `0x280a0` (`0x100280a0`).
+2. Calls `0x100109c8` and `0x10010a90`—which disassembles into a full implementation of the Russian standard **GOST 28147-89 (Magma)** 64-bit Feistel block cipher!
+3. Derives 32 round keys from the 256-bit key at `0x1763ac` (copied to SRAM at `0x20001810`) and applies the 8 substitution boxes at `0x1016ddc0`.
+4. Decrypts three 8-byte blocks to yield the true plaintext flag:
+   > **`{Fly1ng_C4r_Pr0m1s3}`**
+5. And then—the final troll—overwrites the decrypted buffer in RAM with `0x2A` (`'*'`) at `0x10010326` before printing `Flag: ***********************`!
+
+The real puzzle wasn't just dumping the flash—it was spotting the honeypot and statically decrypting the GOST ciphertext.
 
 ### Reversing `FLAG 2` (Enter Professor Plum)
 Next, we looked at the `FLAG 2` branch (`0x1001033a`). Before doing anything, it reads the first 4 bytes of the badge's onboard I2C EEPROM and compares them against the string **`"PLUM"`**. If that header isn't there, it prints `Flag: INVALID`.
@@ -76,7 +83,7 @@ char = ((x << 3) | (x >> 5)) & 0xFF  # 3-bit left rotate
 Running those 21 bytes through a 5-line Python script decoded **`FLAG 2`** on the spot:
 > **`{R4ygun_G0th13_Ph4s3}`**
 
-All three CTF flags were now in the bag.
+With `FLAG 1` (`{At0m1c_Ut0p1a_1955}`), `FLAG 2` (`{R4ygun_G0th13_Ph4s3}`), and the true `FLAG 3` (`{Fly1ng_C4r_Pr0m1s3}`) solved (and the decoy documented), all three real CTF flags were in the bag.
 
 ---
 
@@ -156,6 +163,6 @@ Every time you unlock an achievement on the SAINTCON 2026 badge, it shaves 5 mil
 
 **Final tally:**
 - **Handle:** `"BrainVirus"`
-- **Flags:** 3 / 3 (`{At0m1c_Ut0p1a_1955}`, `{R4ygun_G0th13_Ph4s3}`, `{Rusty_C0d3_1s_4w3s0m3}`)
+- **Flags:** 3 / 3 (`{At0m1c_Ut0p1a_1955}`, `{R4ygun_G0th13_Ph4s3}`, `{Fly1ng_C4r_Pr0m1s3}`) + strings decoy `{Rusty_C0d3_1s_4w3s0m3}` documented (thanks to `r3tr0hck342`!).
 - **Unlock Codes:** 30 / 30 cracked and verified on hardware.
 

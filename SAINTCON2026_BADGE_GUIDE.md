@@ -21,13 +21,48 @@
 
 ---
 
-## 2. All 3 Hidden CTF Flags (`FLAG 1`, `FLAG 2`, `FLAG 3`)
+## 2. CTF Flags & The Decoy Honeypot
 
-| Flag         | Value                     | How It Was Found                                                                                                                                                                                                                                                                                                                                 |                   |
-| :----------- | :------------------------ | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
-| **`FLAG 1`** | `{At0m1c_Ut0p1a_1955}`    | Returned directly via the `FLAG 1` serial command (`0x10010300`).                                                                                                                                                                                                                                                                                |                   |
-| **`FLAG 2`** | `{R4ygun_G0th13_Ph4s3}`   | On the CLI, `FLAG 2` checks for an external hardware EEPROM containing the 4-byte magic header `"PLUM"` (`0x10027db0`). Inspecting the firmware around that check revealed a 21-byte obfuscated array at flash offset `0x280bc`. Each byte `b` at index `i` (`0..20`) decodes via:<br>`x = ((b ^ i ^ 0xA5) + 3 * i) & 0xFF`<br>`char = ((x << 3) | (x >> 5)) & 0xFF` |
-| **`FLAG 3`** | `{Rusty_C0d3_1s_4w3s0m3}` | Sending `FLAG 3` on the CLI outputs masked asterisks (`Flag: ***********************`). Inspecting the flash strings adjacent to the `FLAG` handler in `badge_backup.bin` revealed the plaintext flag stored at offset `0x28070` (`0x10028070`).                                 |                   |
+> [!IMPORTANT]
+> **Credit:** Special recognition to **`r3tr0hck342`** for discovering that `{Rusty_C0d3_1s_4w3s0m3}` is a clever strings honeypot and pointing out the real GOST/Magma cipher implementation for Flag 3!
+
+| Flag | Value | Storage & Decryption | Notes |
+| :--- | :--- | :--- | :--- |
+| **`Decoy`** | `{Rusty_C0d3_1s_4w3s0m3}` | Plaintext in flash @ `0x10028070` (offset `0x28070`) | **Honeypot bait.** Copied into buffer at `0x10010026`, but *every* command branch overwrites the buffer. `strings` finds it first, but it is never printed. |
+| **`FLAG 1`** | `{At0m1c_Ut0p1a_1955}` | XOR `0xCC` @ `0x10028088` (offset `0x28088`) | Printed directly to serial when entering `FLAG 1` (`0x1001004a`). |
+| **`FLAG 2`** | `{R4ygun_G0th13_Ph4s3}` | Flash offset `0x280bc` (`0x100280bc`)<br>`x = ((b ^ i ^ 0xA5) + 3 * i) & 0xFF`<br>`char = ((x << 3) \| (x >> 5)) & 0xFF` | Gated by I2C EEPROM check: bytes `0..3` must equal `"PLUM"` (`0x4d554c50` at `0x10010348`). Otherwise outputs `Flag: INVALID`. |
+| **`FLAG 3`** | `{Fly1ng_C4r_Pr0m1s3}` | **GOST 28147-89 (Magma)** @ `0x100280a0` (offset `0x280a0`) | 24 ciphertext bytes decrypted with 256-bit key from `0x1763ac` (SRAM `0x20001810`) and S-boxes at `0x1016ddc0`. Device asterisks out buffer at `0x10010326` before printing. |
+
+### Decrypting Flag 3 (GOST 28147-89 / Magma) in Python
+```python
+import struct
+
+with open("badge_backup.bin", "rb") as f:
+    data = f.read()
+
+sbox = data[0x16ddc0 : 0x16ddc0 + 128]
+K = struct.unpack("<8I", data[0x1763ac : 0x1763ac + 32])
+idx = struct.unpack("<32I", data[0x16dd40 : 0x16dd40 + 128])
+ct = data[0x280a0 : 0x280a0 + 24]
+
+def f_step(x, k):
+    s = (x + k) & 0xFFFFFFFF
+    res = 0
+    for i in range(8):
+        res |= sbox[i * 16 + ((s >> (4 * i)) & 0xF)] << (4 * i)
+    return ((res << 11) | (res >> 21)) & 0xFFFFFFFF
+
+pt = bytearray()
+for b in range(0, 24, 8):
+    L, R = struct.unpack("<2I", ct[b : b + 8])
+    for rnd in range(32):
+        L, R = R ^ f_step(L, K[idx[rnd]]), L
+    pt.extend(struct.pack("<2I", R, L))
+
+pad = pt[-1]
+flag3 = pt[:-pad].decode("ascii")
+print(f"Decrypted Real Flag 3: {flag3}")
+```
 
 ---
 

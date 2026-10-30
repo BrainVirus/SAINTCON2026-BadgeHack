@@ -221,7 +221,7 @@ Now you have `badge_backup.bin` on your hard drive!
 
 Now that we dumped `badge_backup.bin` in Phase 5, we have the complete, unencrypted flash filesystem. This is where hardware hacking turns into software reverse engineering and binary forensics.
 
-### 1. Capturing Flag 3: The Asterisk Troll (`0x28070`)
+### 1. Capturing Flag 3: The Decoy Bait & The Real GOST Cipher (`0x280a0`)
 
 Recall that running `FLAG 3` in Phase 2 printed:
 ```text
@@ -229,25 +229,24 @@ Recall that running `FLAG 3` in Phase 2 printed:
 Flag: ***********************
 ```
 
-Why did the badge redact the flag with 23 asterisks?
-
-When we inspect the ARM Thumb-2 disassembly of the `FLAG` command handler:
-
-1. At address `0x10010026`, the firmware loads the pointer to the real plaintext flag from literal pool address `0x100101c4` (which holds `0x10028070`, flash offset `0x28070`) and copies all 23 bytes into the stack output buffer:
-```armasm
-10010026:  ldr   r5, [pc, #412]       ; loads address 0x10028070 from literal pool (0x100101c4)
-10010028:  add   r4, sp, #32          ; r4 = stack output buffer
-1001002a:  ldmia r5!, {r0, r1, r2, r3} ; copies first 16 bytes of plaintext flag into buffer
-1001002e:  ldmia.w r5, {r0, r1}        ; copies remaining bytes of flag into buffer
+#### The Decoy Trap (`{Rusty_C0d3_1s_4w3s0m3}`)
+If you run `strings badge_backup.bin | grep "{"`, the first string that immediately appears in the flash image is:
+```text
+{Rusty_C0d3_1s_4w3s0m3}
 ```
+At first glance, it looks like an easy win—the string sits in plaintext at flash offset `0x28070` (`0x10028070`), and at address `0x10010026`, the firmware initially loads it into the output buffer.
 
-2. At `0x1001003a`, it checks if the argument after `FLAG` is `'3'` (`0x33`). If so, it branches to `0x100102fe`:
-```armasm
-1001003a:  cmp.w ip, #51              ; Is the argument '3' (0x33)?
-1001003e:  beq.w 0x100102fe           ; Jump to Flag 3 branch
-```
+> [!IMPORTANT]
+> **Credit:** Massive thanks to **`r3tr0hck342`** for pointing out that `{Rusty_C0d3_1s_4w3s0m3}` is actually a decoy trap and discovering the real GOST/Magma cipher implementation!
 
-3. Inside the `FLAG 3` branch at `0x10010326`, notice what happens right before printing:
+**This string is an intentional decoy!** Every single command path (`FLAG 1`, `FLAG 2`, `FLAG 3`, or syntax error) immediately overwrites the buffer before printing. The decoy string is *never* printed under any condition. It exists solely to trap anyone relying on naive static string searches.
+
+#### The Real Flag 3: GOST 28147-89 (Magma) Decryption
+When `FLAG 3` is entered (`0x100102fe`):
+1. The firmware loads **24 encrypted bytes** from flash address `0x100280a0` (file offset `0x280a0`).
+2. It initializes the **GOST 28147-89 (Magma)** block cipher—a 64-bit Feistel cipher—using the 256-bit key from flash offset `0x1763ac` (mapped to `0x20001810` in SRAM) and S-boxes at `0x1016ddc0` (`0x16ddc0`).
+3. It runs three 8-byte blocks through 32 rounds of Feistel decryption, recovering the real plaintext: **`{Fly1ng_C4r_Pr0m1s3}`** (padded with 4 bytes of PKCS#7 `\x04`).
+4. *Only after* decrypting the real flag in RAM does the firmware execute this troll right before printing:
 ```armasm
 10010326:  mov.w r3, #0x2a2a2a2a      ; 0x2A is ASCII for '*' ('****')!
 1001032a:  str   r3, [sp, #48]
@@ -256,23 +255,47 @@ When we inspect the ARM Thumb-2 disassembly of the `FLAG` command handler:
 10010338:  b.n   0x1001008a           ; jumps to print "Flag: ***********************"
 ```
 
-The badge developer pulled a classic conference prank: the firmware loads the real plaintext flag into RAM, but right before sending it across the serial line, it loops and overwrites the entire string with asterisks (`0x2A`)!
-
-Because the real string lives in the firmware flash at offset `0x28070` (`0x10028070`), we can extract it directly from `badge_backup.bin`:
+#### How to Decrypt the Real Flag 3:
+Because the ciphertext, round keys, and S-boxes are all in `badge_backup.bin`, we can decrypt the true flag statically in Python:
 
 ```bash
-# Option A: Quick search using the strings command
-strings -n 10 badge_backup.bin | grep "Rusty"
+python3 -c "
+import struct
+with open('badge_backup.bin', 'rb') as f:
+    data = f.read()
 
-# Option B: Exact byte slice with Python
-python3 -c "print(open('badge_backup.bin', 'rb').read()[0x28070:0x28070+23].decode())"
+sbox = data[0x16ddc0 : 0x16ddc0 + 128]
+K = struct.unpack('<8I', data[0x1763ac : 0x1763ac + 32])
+idx = struct.unpack('<32I', data[0x16dd40 : 0x16dd40 + 128])
+ct = data[0x280a0 : 0x280a0 + 24]
+
+def f_step(x, k):
+    s = (x + k) & 0xFFFFFFFF
+    res = 0
+    for i in range(8):
+        res |= (sbox[i * 16 + ((s >> (4 * i)) & 0xF)] << (4 * i))
+    return ((res << 11) | (res >> 21)) & 0xFFFFFFFF
+
+pt = bytearray()
+for b in range(0, 24, 8):
+    L, R = struct.unpack('<2I', ct[b:b+8])
+    for rnd in range(32):
+        L, R = R ^ f_step(L, K[idx[rnd]]), L
+    pt.extend(struct.pack('<2I', R, L))
+
+pad = pt[-1]
+flag3 = pt[:-pad].decode('ascii')
+print(f'Real Flag 3: {flag3}')
+"
 ```
 
 **Output:**
 ```text
-{Rusty_C0d3_1s_4w3s0m3}
+Real Flag 3: {Fly1ng_C4r_Pr0m1s3}
 ```
-**Flag 3 captured!**
+**True Flag 3 captured!**
+
+*(You can also run [`scripts/decrypt_flags.py`](./scripts/decrypt_flags.py) to automatically extract and decrypt all 3 flags and print the honeypot analysis).*
 
 ---
 
@@ -474,8 +497,9 @@ Your physical badge now has every single conference achievement unlocked and you
 ## Summary of Achievements & Flags
 
 1. **CTF Flags Captured:**
-   - **Flag 1:** `{At0m1c_Ut0p1a_1955}` *(CLI)*
-   - **Flag 2:** `{R4ygun_G0th13_Ph4s3}` *(Deobfuscated from firmware byte table)*
-   - **Flag 3:** `{Rusty_C0d3_1s_4w3s0m3}` *(Extracted from adjacent flash memory)*
+   - **Flag 1:** `{At0m1c_Ut0p1a_1955}` *(XOR 0xCC @ `0x10028088`, printed via CLI)*
+   - **Flag 2:** `{R4ygun_G0th13_Ph4s3}` *(Deobfuscated from firmware byte table @ `0x100280bc`, EEPROM gated)*
+   - **Flag 3:** `{Fly1ng_C4r_Pr0m1s3}` *(Decrypted via GOST 28147-89 / Magma @ `0x100280a0`; special credit to `r3tr0hck342`)*
+   - **Decoy:** `{Rusty_C0d3_1s_4w3s0m3}` *(Unused plaintext strings bait @ `0x10028070`)*
 2. **Achievements Unlocked:** 32 / 32 (30 via serial script + Konami Code + First Departure).
 3. **In-Game Reward:** Starting *Wayfarer* with **₡5,800 credits** and all **5 specialist crew members**!
