@@ -1,0 +1,6 @@
+*.bin
+badge_emu
+badge_emu.c
+SAINTCON2026_BADGE_STORY_HIGHSCHOOL.md
+*.bmp
+__pycache__/
