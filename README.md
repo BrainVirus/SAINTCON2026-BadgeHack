@@ -38,21 +38,4 @@ python3 scripts/setup_badge.py
 > [!TIP]
 > You do **not** need to use `BrainVirus`! Replace `<YOUR_HANDLE>` with your own hacker alias or preferred conference name.
 
-## Building & Running the Desktop Emulator (`badge_emu`)
 
-```bash
-gcc -O3 -Wall badge_emu.c $(sdl2-config --cflags --libs) -lm -o badge_emu
-./badge_emu
-```
-*(Requires `badge_backup.bin`, which you can dump from your badge via `sudo picotool save -a badge_backup.bin`).*
-
-### Controls
-| Badge Input | Keyboard Keys |
-| :--- | :--- |
-| **Joystick Up / Down / Left / Right** | `W` / `A` / `S` / `D` or **Arrow Keys** |
-| **A Button (Confirm / Action)** | `Space`, `Enter`, `J`, or `X` |
-| **B Button (Back / Cancel)** | `Escape`, `Backspace`, `K`, or `Z` |
-| **Joystick Click (Select)** | `Tab` or `E` |
-| **Unlock All 32 Achievements (`$5,800` Start)** | `F1` |
-| **Restore All 5 Specialist Crew (`A`–`E`)** | `F2` |
-| **Save BMP Screenshot (`badge_screenshot.bmp`)** | `F12` |
