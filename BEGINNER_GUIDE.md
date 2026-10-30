@@ -404,7 +404,10 @@ The loop in `0x1000e0f0`–`0x1000e102` then compares your calculated 64-bit has
 - If the hash matches entry `i`, achievement `i` is unlocked and written to the badge's EEPROM.
 
 Because we now had both the **algorithm** (`0x10010a9c`) and the **seed** (`"PlumProf"` / `0x50726f66506c756d`), we reconstructed the hash in Python. All unlock codes followed the pattern:
-$$\mathbf{SC\_<WORD1>\_<WORD2>}$$
+
+```text
+SC_<WORD1>_<WORD2>
+```
 
 We fed standard sci-fi and space navigation terms (`VECTOR`, `ORBIT`, `DRIFT`, `NOVA`, `PULSE`, `FLUX`, `SIGNAL`, etc.) into a Python dictionary generator. Within seconds, all 30 64-bit target hashes collided, giving us the full list of secret codes:
 
